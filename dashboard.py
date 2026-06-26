@@ -1,5 +1,8 @@
+import os
 import pandas as pd
 import streamlit as st
+
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 KEYWORDS = {
     '불만': ['오류', '느려', '불편', '안돼', '문제', '달아', '별로', '이상'],
@@ -39,7 +42,7 @@ def classify(text: str) -> str:
 # ── 데이터 로드 ──────────────────────────────────────────────
 @st.cache_data
 def load_data() -> pd.DataFrame:
-    df = read_csv('feedback.csv')
+    df = read_csv(os.path.join(HERE, 'feedback.csv'))
     df['별점'] = pd.to_numeric(df['별점'], errors='coerce')
     df['유형'] = df['내용'].apply(classify)
     return df
