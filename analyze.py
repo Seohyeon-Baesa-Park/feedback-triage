@@ -1,6 +1,10 @@
 import os
+import matplotlib
+import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+
+matplotlib.use('Agg')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -68,27 +72,26 @@ left, right = st.columns([1, 1])
 
 with left:
     st.subheader('📊 유형별 집계')
-    chart_data = (
-        pd.DataFrame({'유형': TYPE_ORDER})
-        .merge(counts.rename('건수').reset_index(), on='유형', how='left')
-        .fillna(0)
-        .set_index('유형')
-    )
-    st.bar_chart(chart_data, color='#3B82F6', height=300)
+    labels = TYPE_ORDER
+    values = [int(counts.get(t, 0)) for t in labels]
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax.bar(labels, values, color='#3B82F6')
+    ax.set_ylabel('건수')
+    ax.set_ylim(0, max(values) + 1)
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
 with right:
     st.subheader('⭐ 별점 분포')
-    rating_counts = (
-        df['별점']
-        .dropna()
-        .astype(int)
-        .value_counts()
-        .sort_index()
-        .rename('건수')
-        .to_frame()
-    )
-    rating_counts.index = rating_counts.index.map(lambda x: f'{"★" * x}')
-    st.bar_chart(rating_counts, color='#F5A623', height=300)
+    rating_series = df['별점'].dropna().astype(int).value_counts().sort_index()
+    r_labels = [f'{"★" * r}' for r in rating_series.index]
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax.bar(r_labels, rating_series.values, color='#F5A623')
+    ax.set_ylabel('건수')
+    fig.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
 st.divider()
 
