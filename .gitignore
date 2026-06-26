@@ -1,0 +1,6 @@
+day1/
+day2/
+day3/
+__pycache__/
+*.pyc
+.DS_Store
