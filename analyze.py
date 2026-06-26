@@ -1,5 +1,8 @@
+import os
 import pandas as pd
+import streamlit as st
 
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 KEYWORDS = {
     '불만': ['오류', '느려', '불편', '안돼', '문제', '달아', '별로', '이상'],
@@ -8,6 +11,14 @@ KEYWORDS = {
     '문의': ['언제', '어떻게', '되나요', '알려'],
 }
 TYPE_ORDER = ['불만', '요청', '칭찬', '문의', '기타']
+TYPE_EMOJI = {'불만': '😡', '요청': '🙋', '칭찬': '😊', '문의': '❓', '기타': '📝'}
+TYPE_COLOR = {
+    '불만': '#FF4B4B',
+    '요청': '#F5A623',
+    '칭찬': '#21C55D',
+    '문의': '#3B82F6',
+    '기타': '#9CA3AF',
+}
 
 
 def read_csv(filepath: str) -> pd.DataFrame:
@@ -28,33 +39,98 @@ def classify(text: str) -> str:
     return '기타'
 
 
-def main() -> None:
-    df = read_csv('feedback.csv')
-
+# ── 데이터 로드 ──────────────────────────────────────────────
+@st.cache_data
+def load_data() -> pd.DataFrame:
+    df = read_csv(os.path.join(HERE, 'feedback.csv'))
     df['별점'] = pd.to_numeric(df['별점'], errors='coerce')
     df['유형'] = df['내용'].apply(classify)
+    return df
 
-    # 유형별 집계
-    counts = df['유형'].value_counts()
-    print("=== 유형별 집계 ===")
-    for t in TYPE_ORDER:
-        n = counts.get(t, 0)
-        if n:
-            print(f"{t} : {n}건")
 
-    # 불만 Top 3 (별점 낮은 순, 결측은 맨 뒤)
-    complaints = (
-        df[df['유형'] == '불만']
-        .sort_values('별점', ascending=True, na_position='last')
-        .head(3)
+# ── 페이지 설정 ──────────────────────────────────────────────
+st.set_page_config(page_title='피드백 대시보드', page_icon='💬', layout='wide')
+st.title('💬 고객 피드백 분석 대시보드')
+
+df = load_data()
+counts = df['유형'].value_counts()
+
+# ── 상단 지표 카드 ────────────────────────────────────────────
+cols = st.columns(len(TYPE_ORDER))
+for col, t in zip(cols, TYPE_ORDER):
+    n = int(counts.get(t, 0))
+    col.metric(label=f"{TYPE_EMOJI[t]} {t}", value=f"{n}건")
+
+st.divider()
+
+# ── 유형별 집계 바 차트 ──────────────────────────────────────
+left, right = st.columns([1, 1])
+
+with left:
+    st.subheader('📊 유형별 집계')
+    chart_data = (
+        pd.DataFrame({'유형': TYPE_ORDER})
+        .merge(counts.rename('건수').reset_index(), on='유형', how='left')
+        .fillna(0)
+        .set_index('유형')
     )
+    st.bar_chart(chart_data, color='#3B82F6', height=300)
 
-    print("\n=== 급한 불만 Top3 ===")
-    for i, (_, row) in enumerate(complaints.iterrows(), 1):
-        channel = row['경로'] if pd.notna(row.get('경로', float('nan'))) else ''
-        content = row['내용'] if pd.notna(row['내용']) else ''
-        print(f"{i}. [{channel}] {content}")
+with right:
+    st.subheader('⭐ 별점 분포')
+    rating_counts = (
+        df['별점']
+        .dropna()
+        .astype(int)
+        .value_counts()
+        .sort_index()
+        .rename('건수')
+        .to_frame()
+    )
+    rating_counts.index = rating_counts.index.map(lambda x: f'{"★" * x}')
+    st.bar_chart(rating_counts, color='#F5A623', height=300)
 
+st.divider()
 
-if __name__ == '__main__':
-    main()
+# ── 급한 불만 Top 3 ───────────────────────────────────────────
+st.subheader('🚨 급한 불만 Top 3 (별점 낮은 순)')
+
+complaints = (
+    df[df['유형'] == '불만']
+    .sort_values('별점', ascending=True, na_position='last')
+    .head(3)
+    .reset_index(drop=True)
+)
+
+if complaints.empty:
+    st.info('불만 피드백이 없습니다.')
+else:
+    for i, row in complaints.iterrows():
+        rating_str = f"{'★' * int(row['별점'])}{'☆' * (5 - int(row['별점']))}" if pd.notna(row['별점']) else '별점 없음'
+        with st.container(border=True):
+            rank_col, content_col = st.columns([1, 10])
+            rank_col.markdown(f"### {i + 1}위")
+            with content_col:
+                st.markdown(f"**[{row['경로']}]** {row['내용']}")
+                st.caption(f"{rating_str} &nbsp;|&nbsp; {row['받은날짜']}")
+
+st.divider()
+
+# ── 전체 데이터 테이블 ────────────────────────────────────────
+with st.expander('📋 전체 피드백 보기', expanded=False):
+    type_filter = st.multiselect(
+        '유형 필터',
+        options=TYPE_ORDER,
+        default=TYPE_ORDER,
+    )
+    filtered = df[df['유형'].isin(type_filter)][['받은날짜', '경로', '별점', '유형', '내용']]
+
+    def highlight_type(row):
+        color = TYPE_COLOR.get(row['유형'], '#ffffff')
+        return [f'background-color: {color}22' if col == '유형' else '' for col in row.index]
+
+    st.dataframe(
+        filtered.style.apply(highlight_type, axis=1),
+        use_container_width=True,
+        hide_index=True,
+    )
